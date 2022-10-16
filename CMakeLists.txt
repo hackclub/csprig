@@ -13,8 +13,9 @@ add_executable(csprig
   main.c
 )
 
-target_compile_options (csprig PRIVATE -fsanitize=undefined)
-target_link_options    (csprig PRIVATE -fsanitize=undefined)
+# ha this doesn't exist on arm. im stupid
+# target_compile_options (csprig PRIVATE -fsanitize=undefined)
+# target_link_options    (csprig PRIVATE -fsanitize=undefined)
 
 target_link_libraries(csprig PRIVATE
   pico_stdlib
