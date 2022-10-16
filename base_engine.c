@@ -459,6 +459,8 @@ WASM_EXPORT int map_width(void) { return state->width; }
 WASM_EXPORT int map_height(void) { return state->height; }
 
 WASM_EXPORT Sprite *map_get_first(char kind) {
+  puts("base_engine.c:map_get_first");
+
   for (int y = 0; y < state->height; y++)
     for (int x = 0; x < state->width; x++) {
       Sprite *top = state->map[x][y];
@@ -608,7 +610,9 @@ static int _map_move(Sprite *s, int big_dx, int big_dy) {
 }
 
 WASM_EXPORT void map_move(Sprite *s, int big_dx, int big_dy) {
+  puts("base_engine.c:map_move");
   int moved = _map_move(s, big_dx, big_dy);
+  puts("base_engine.c:map_move - out");
   if (big_dx != 0) s->dx = moved;
   else             s->dy = moved;
 }

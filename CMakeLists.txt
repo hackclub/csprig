@@ -6,8 +6,6 @@ include(pico_extras_import.cmake)
 project(csprig C CXX)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_C_FLAGS_INIT "-fsanitize=undefined -Wall")
-set(CMAKE_CXX_FLAGS_INIT "-fsanitize=undefined -Wall")
 
 pico_sdk_init()
 
@@ -15,8 +13,12 @@ add_executable(csprig
   main.c
 )
 
+target_compile_options (csprig PRIVATE -fsanitize=undefined)
+target_link_options    (csprig PRIVATE -fsanitize=undefined)
+
 target_link_libraries(csprig PRIVATE
   pico_stdlib
+  pico_multicore
   hardware_spi
 )
 

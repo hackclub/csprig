@@ -119,7 +119,7 @@ static void write_data(uint8_t data_){
   tft_cs_high();
 }
 
-void st7735_fill(uint16_t (*pixel)(int x, int y)) {
+void st7735_fill(uint16_t *pixels) {
   tft_cs_low();
 
   spi_command(ST7735_CASET);
@@ -131,14 +131,7 @@ void st7735_fill(uint16_t (*pixel)(int x, int y)) {
   spi_command(ST7735_RAMWR);
   tft_dc_high(); /* (no data) */
 
-  {
-    uint16_t img[160][128] = {0};
-    for (int x = 0; x < 160; x++)
-      for (int y = 0; y < 128; y++) {
-        img[x][y] = pixel(x, y);
-      }
-    spi_write_blocking(SPI_TFT_PORT, (uint8_t *)&img, sizeof(img));
-  }
+  spi_write_blocking(SPI_TFT_PORT, (uint8_t *)pixels, 160 * 128 * sizeof(uint16_t));
 
   tft_cs_high();
 }
