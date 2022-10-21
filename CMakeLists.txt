@@ -17,11 +17,37 @@ add_executable(csprig
 # target_compile_options (csprig PRIVATE -fsanitize=undefined)
 # target_link_options    (csprig PRIVATE -fsanitize=undefined)
 
+add_library(JerryXX jerryxx.c)
 target_link_libraries(csprig PRIVATE
+  JerryXX 
+  "${CMAKE_CURRENT_SOURCE_DIR}/jerry/lib/libjerry-core.a"
+  "${CMAKE_CURRENT_SOURCE_DIR}/jerry/lib/libjerry-ext.a"
+  "${CMAKE_CURRENT_SOURCE_DIR}/jerry/lib/libjerry-port-default.a"
   pico_stdlib
   pico_multicore
   hardware_spi
 )
+
+set(JERRY_ROOT /Users/ced/kaluma/lib/jerryscript)
+include_directories(
+  ${JERRY_ROOT}/jerry-core
+  ${JERRY_ROOT}/jerry-core/api
+  ${JERRY_ROOT}/jerry-core/debugger
+  ${JERRY_ROOT}/jerry-core/ecma/base
+  ${JERRY_ROOT}/jerry-core/ecma/builtin-objects
+  ${JERRY_ROOT}/jerry-core/ecma/builtin-objects/typedarray
+  ${JERRY_ROOT}/jerry-core/ecma/operations
+  ${JERRY_ROOT}/jerry-core/include
+  ${JERRY_ROOT}/jerry-core/jcontext
+  ${JERRY_ROOT}/jerry-core/jmem
+  ${JERRY_ROOT}/jerry-core/jrt
+  ${JERRY_ROOT}/jerry-core/lit
+  ${JERRY_ROOT}/jerry-core/parser/js
+  ${JERRY_ROOT}/jerry-core/parser/regexp
+  ${JERRY_ROOT}/jerry-core/vm
+  ${JERRY_ROOT}/jerry-ext/arg
+  ${JERRY_ROOT}/jerry-ext/include
+  ${JERRY_ROOT}/jerry-libm)
 
 pico_enable_stdio_usb(csprig 1)
 pico_enable_stdio_uart(csprig 0)

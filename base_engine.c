@@ -17,14 +17,26 @@
 
 #else
 
-  static uint16_t color16(uint8_t g, uint8_t r, uint8_t b) {
-    // return ((r & 0xf8) << 8) + ((g & 0xfc) << 3) + (b >> 3);
-    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
-  }
+  #if 1
+    #define FUCKED_COORDINATE_SYSTEM
+
+    static uint16_t color16(uint8_t r, uint8_t b, uint8_t g) {
+      r = (uint8_t)((float)((float)r / 255.0f) * 31.0f);
+      g = (uint8_t)((float)((float)g / 255.0f) * 31.0f);
+      b = (uint8_t)((float)((float)b / 255.0f) * 63.0f);
+
+      // return ((r & 0xf8) << 8) + ((g & 0xfc) << 3) + (b >> 3);
+      return ((r & 0b11111000) << 8) | ((g & 0b11111100) << 3) | (b >> 3);
+    }
+
+    typedef uint16_t Color;
+  #else
+    #define color16 MFB_RGB
+    typedef uint32_t Color;
+  #endif
 
   #define WASM_EXPORT static
 
-  typedef uint16_t Color;
 
 #endif
 
@@ -42,7 +54,7 @@ static float signf(float f) {
 
 #define SPRITE_SIZE (16)
 typedef struct {
-  uint16_t pixels[SPRITE_SIZE][SPRITE_SIZE];
+  Color       pixels[SPRITE_SIZE][SPRITE_SIZE];
   uint8_t     lit[SPRITE_SIZE*SPRITE_SIZE / 8];
 } Doodle;
 
@@ -82,6 +94,8 @@ typedef struct {
 
 typedef struct {
   int width, height;
+
+  void (*map_free_cb)(Sprite *);
 
   char  text_char [TEXT_CHARS_MAX_Y][TEXT_CHARS_MAX_X];
   Color text_color[TEXT_CHARS_MAX_Y][TEXT_CHARS_MAX_X];
@@ -163,7 +177,7 @@ WASM_EXPORT void text_clear(void) {
   __builtin_memset(state->text_color, 0, sizeof(state->text_color));
 }
 
-WASM_EXPORT void init(void) {
+WASM_EXPORT void init(void (*map_free_cb)(Sprite *)) {
 #ifdef __wasm__
   int mem_needed = sizeof(State)/PAGE_SIZE;
 
@@ -181,12 +195,14 @@ WASM_EXPORT void init(void) {
   state->render = &_state_render;
 #endif
 
+  state->map_free_cb = map_free_cb;
+
   /* -- error handling for when state is dynamically allocated -- */ 
   // if (state->render == 0) {
   //   state->render = malloc(sizeof(State_Render));
   //   printf("sizeof(State_Render) = %d, addr: %d\n", sizeof(State_Render), (unsigned int)state->render);
   // }
-  // if (state->render == 0) puts("couldn't alloc state");
+  // if (state->render == 0) yell("couldn't alloc state");
 
   __builtin_memset(state->render, 0, sizeof(State_Render));
 
@@ -208,13 +224,19 @@ WASM_EXPORT void init(void) {
   state->render->palette['H'] = color16(170,  58, 197);
   state->render->palette['9'] = color16(245, 113,  23);
   state->render->palette['.'] = color16(  0,   0,   0);
-
-  puts("hi!");
 }
 
 WASM_EXPORT char *temp_str_mem(void) {
   __builtin_memset(&state->temp_str_mem, 0, sizeof(state->temp_str_mem));
   return state->temp_str_mem;
+}
+
+static int render_xy_to_idx(int x, int y) {
+#ifdef FUCKED_COORDINATE_SYSTEM
+  return (SCREEN_SIZE_X - x - 1)*SCREEN_SIZE_Y + y;
+#else
+  return SCREEN_SIZE_X*y + x;
+#endif
 }
 
 /* call this when the map changes size, or when the legend changes */
@@ -263,7 +285,11 @@ static void render_blit_sprite(Color *screen, int sx, int sy, char kind) {
 
           render_lit_write(px, py);
 
+#ifdef FUCKED_COORDINATE_SYSTEM
           int i = (ox + sx + scale*(state->tile_size - 1 - x)) * SCREEN_SIZE_Y + py;
+#else
+          int i = SCREEN_SIZE_X*py + px;
+#endif
           screen[i] = d->pixels[y][x];
         }
     }
@@ -274,8 +300,7 @@ static void render_char(Color *screen, char c, Color color, int sx, int sy) {
     uint8_t bits = font_pixels[c*8 + y];
     for (int x = 0; x < 8; x++)
       if ((bits >> (7-x)) & 1) {
-        int i = (SCREEN_SIZE_X - (sx+x) - 1)*SCREEN_SIZE_Y + (sy+y);
-        screen[i] = color;
+        screen[render_xy_to_idx(sx+x, sy+y)] = color;
       }
   }
 }
@@ -287,6 +312,9 @@ WASM_EXPORT void render_set_background(char kind) {
 WASM_EXPORT uint8_t map_get_grid(MapIter *m);
 WASM_EXPORT void render(Color *screen) {
   __builtin_memset(&state->render->lit, 0, sizeof(state->render->lit));
+
+  if (!state->width)  goto RENDER_TEXT;
+  if (!state->height) goto RENDER_TEXT;
 
   int scale;
   {
@@ -307,22 +335,25 @@ WASM_EXPORT void render(Color *screen) {
   int oy = (SCREEN_SIZE_Y - pixel_height)/2;
 
 
-  puts("render: clear to white");
+  // dbg("render: clear to white");
   for (int y = oy; y < oy+pixel_height; y++)
     for (int x = ox; x < ox+pixel_width; x++) {
-      int i = (SCREEN_SIZE_X - x - 1)*SCREEN_SIZE_Y + y;
-      screen[i] = color16(255, 255, 255);
+      screen[render_xy_to_idx(x, y)] = color16(255, 255, 255);
     }
 
-  puts("render: grid");
+  // dbg("render: grid");
   MapIter m = {0};
   while (map_get_grid(&m))
     render_blit_sprite(screen,
+#ifdef FUCKED_COORDINATE_SYSTEM
                        ox + size*(state->width - 1 - m.sprite->x),
+#else
+                       ox + size*m.sprite->x,
+#endif
                        oy + size*m.sprite->y,
                        m.sprite->kind);
 
-  puts("render: bg");
+  // dbg("render: bg");
   if (state->background_sprite)
     for (int y = 0; y < state->height; y++)
       for (int x = 0; x < state->width; x++)
@@ -331,14 +362,15 @@ WASM_EXPORT void render(Color *screen) {
                            oy + size*y,
                            state->background_sprite);
 
-  puts("render: text");
+  RENDER_TEXT:
+  // dbg("render: text");
   for (int y = 0; y < TEXT_CHARS_MAX_Y; y++)
     for (int x = 0; x < TEXT_CHARS_MAX_X; x++) {
       char c = state->text_char[y][x];
       if (c) render_char(screen, c, state->text_color[y][x], x*8, y*8);
     }
 
-  puts("render: done");
+  // dbg("render: done");
 }
 
 static Sprite *map_alloc(void) {
@@ -352,6 +384,8 @@ static Sprite *map_alloc(void) {
   return 0;
 }
 static void map_free(Sprite *s) {
+  if (state->map_free_cb) state->map_free_cb(s);
+
   memset(s, 0, sizeof(Sprite));
   size_t i = s - state->sprite_pool;
   state->sprite_slot_active    [i] = 0;
@@ -395,7 +429,6 @@ static void map_pluck(Sprite *s) {
  * see map_plop about caller's responsibility */
 static void map_plop(Sprite *sprite) {
   Sprite *top = state->map[sprite->x][sprite->y];
-  printf("top at (%d, %d) is: %ld/%d\n", sprite->x, sprite->y, (long int)(top - state->sprite_pool), SPRITE_COUNT);
 
   /* we want the sprite with the lowest z-order on the top. */
 
@@ -403,7 +436,7 @@ static void map_plop(Sprite *sprite) {
   if (top == 0 || Z_ORDER(top) >= Z_ORDER(sprite)) {
     sprite->next = state->map[sprite->x][sprite->y];
     state->map[sprite->x][sprite->y] = sprite;
-    puts("top's me, early ret");
+    // dbg("top's me, early ret");
     return;
   }
 
@@ -412,21 +445,20 @@ static void map_plop(Sprite *sprite) {
     insert_after = insert_after->next;
   #undef Z_ORDER
 
-  printf("insert_after's : %ld/%d\n", (long int)(insert_after - state->sprite_pool), SPRITE_COUNT);
-  if (insert_after->next) printf("insert_after->next's : %ld/%d\n", (long int)(insert_after->next - state->sprite_pool), SPRITE_COUNT);
-  printf("sprite's: %ld/%d ofc\n", (long int)(sprite - state->sprite_pool), SPRITE_COUNT);
   sprite->next = insert_after->next;
   insert_after->next = sprite;
 }
 
 
 WASM_EXPORT Sprite *map_add(int x, int y, char kind) {
+  if (x < 0 || x >= state->width ) return 0;
+  if (y < 0 || y >= state->height) return 0;
+
   Sprite *s = map_alloc();
-  printf("alloc ret: %ld/%d\n", (long int)(s - state->sprite_pool), SPRITE_COUNT);
   *s = (Sprite) { .x = x, .y = y, .kind = kind };
-  puts("assigned to that mf");
+  // dbg("assigned to that mf");
   map_plop(s);
-  puts("stuck 'em on map, returning now");
+  // dbg("stuck 'em on map, returning now");
   return s;
 }
 
@@ -439,6 +471,7 @@ WASM_EXPORT void map_set(char *str) {
   int tx = 0, ty = 0;
   do {
     switch (*str) {
+      case  ' ': continue;
       case '\n': ty++, tx = 0; break;
       case  '.': tx++;         break;
       case '\0':               break;
@@ -459,8 +492,6 @@ WASM_EXPORT int map_width(void) { return state->width; }
 WASM_EXPORT int map_height(void) { return state->height; }
 
 WASM_EXPORT Sprite *map_get_first(char kind) {
-  puts("base_engine.c:map_get_first");
-
   for (int y = 0; y < state->height; y++)
     for (int x = 0; x < state->width; x++) {
       Sprite *top = state->map[x][y];
@@ -610,9 +641,7 @@ static int _map_move(Sprite *s, int big_dx, int big_dy) {
 }
 
 WASM_EXPORT void map_move(Sprite *s, int big_dx, int big_dy) {
-  puts("base_engine.c:map_move");
   int moved = _map_move(s, big_dx, big_dy);
-  puts("base_engine.c:map_move - out");
   if (big_dx != 0) s->dx = moved;
   else             s->dy = moved;
 }
@@ -658,7 +687,7 @@ WASM_EXPORT void legend_doodle_set(char kind, char *str) {
   /* we don't want to increment if index 0 has already been assigned and this is it */
   if (index == 0 && !state->render->legend_doodled[(int)kind]) {
 
-    if (state->render->doodle_index_count >= PER_DOODLE) puts("max doodle count exceeded.");
+    if (state->render->doodle_index_count >= PER_DOODLE) yell("max doodle count exceeded.");
     index = state->render->doodle_index_count++;
   }
   state->char_to_index[(int)kind] = index;
