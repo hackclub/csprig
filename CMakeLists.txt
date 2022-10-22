@@ -26,6 +26,7 @@ target_link_libraries(csprig PRIVATE
   pico_stdlib
   pico_multicore
   hardware_spi
+  hardware_timer
 )
 
 set(JERRY_ROOT /Users/ced/kaluma/lib/jerryscript)
